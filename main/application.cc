@@ -256,6 +256,24 @@ void Application::Run() {
             if (GetDeviceState() == kDeviceStateListening) {
                 auto led = Board::GetInstance().GetLed();
                 led->OnStateChanged();
+
+                // LiteCrab transcribes a turn when it receives listen/stop.  The
+                // upstream auto mode normally relies on server-side VAD, while
+                // LiteCrab deliberately waits for the device boundary.  Use the
+                // on-device AFE VAD to close the turn after real speech followed
+                // by silence.  Ignore the first 500 ms so the wake-up prompt is
+                // not mistaken for the user's request on boards without AEC.
+                if (listening_mode_ == kListeningModeAutoStop) {
+                    const bool speaking = audio_service_.IsVoiceDetected();
+                    const int64_t elapsed_us = esp_timer_get_time() - listening_started_at_us_;
+                    if (speaking && elapsed_us >= 500000) {
+                        auto_stop_speech_detected_ = true;
+                    } else if (!speaking && auto_stop_speech_detected_) {
+                        ESP_LOGI(TAG, "Local VAD detected end of speech, submitting turn");
+                        auto_stop_speech_detected_ = false;
+                        HandleStopListeningEvent();
+                    }
+                }
             }
         }
 
@@ -542,7 +560,10 @@ void Application::InitializeProtocol() {
 
     protocol_->OnIncomingAudio([this](std::unique_ptr<AudioStreamPacket> packet) {
         if (GetDeviceState() == kDeviceStateSpeaking) {
-            audio_service_.PushPacketToDecodeQueue(std::move(packet));
+            // Do not drop TTS packets when decoding/resampling temporarily falls
+            // behind the network stream. Blocking here applies TCP backpressure
+            // and preserves complete, ordered playback.
+            audio_service_.PushPacketToDecodeQueue(std::move(packet), true);
         }
     });
 
@@ -1003,6 +1024,8 @@ void Application::HandleStateChangedEvent() {
             display->SetChatMessage("system", "");
             break;
         case kDeviceStateListening:
+            auto_stop_speech_detected_ = false;
+            listening_started_at_us_ = esp_timer_get_time();
             display->SetStatus(Lang::Strings::LISTENING);
             display->SetEmotion("neutral");
 
