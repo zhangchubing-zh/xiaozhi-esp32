@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LiteCrab Trace Viewer</title>
+  <link rel="stylesheet" href="viewer.css" />
+</head>
+<body>
+  <!-- ===== Drop zone (visible when no data loaded) ===== -->
+  <div id="dropZone" class="drop-zone">
+    <div class="drop-zone-inner">
+      <svg class="drop-icon" viewBox="0 0 24 24" width="64" height="64" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <polyline points="17 8 12 3 7 8" />
+        <line x1="12" y1="3" x2="12" y2="15" />
+      </svg>
+      <h1>LiteCrab Trace Viewer</h1>
+      <p>拖放 <code>agent_trace_*.jsonl</code> 文件到此处，或</p>
+      <div class="drop-buttons">
+        <label class="btn btn-primary">
+          选择文件
+          <input type="file" id="fileInput" multiple accept=".jsonl,application/jsonl,application/json" hidden />
+        </label>
+        <label class="btn">
+          选择 logs 目录
+          <input type="file" id="dirInput" webkitdirectory directory hidden />
+        </label>
+      </div>
+      <p class="hint">支持多文件 / 整目录加载，全部本地解析，无需上传。</p>
+    </div>
+  </div>
+
+  <!-- ===== Main app ===== -->
+  <div id="app" class="app hidden">
+    <!-- Header: top stats + controls -->
+    <header class="app-header">
+      <div class="header-row">
+        <div class="brand">
+          <span class="brand-mark">◆</span>
+          <span class="brand-name">LiteCrab Trace Viewer</span>
+        </div>
+        <div class="header-actions">
+          <label class="btn btn-sm">
+            + 加载文件
+            <input type="file" id="fileInput2" multiple accept=".jsonl" hidden />
+          </label>
+          <label class="btn btn-sm">
+            + 加载目录
+            <input type="file" id="dirInput2" webkitdirectory directory hidden />
+          </label>
+          <button class="btn btn-sm btn-danger" id="clearBtn">清空</button>
+        </div>
+      </div>
+
+      <!-- Top stats bar -->
+      <div class="stats-bar" id="statsBar">
+        <!-- populated by JS -->
+      </div>
+
+      <!-- Filters -->
+      <div class="filter-row">
+        <input type="search" id="globalSearch" class="search-input" placeholder="搜索 traceId / 输入 / 输出 / 工具名…" />
+        <label class="filter-chip">
+          <input type="checkbox" id="filterError" />
+          <span>仅异常</span>
+        </label>
+        <label class="filter-chip">
+          <input type="checkbox" id="filterTool" />
+          <span>仅含工具调用</span>
+        </label>
+        <label class="filter-chip">
+          <input type="checkbox" id="filterSlow" />
+          <span>仅慢请求 (&gt;3s)</span>
+        </label>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <!-- Sessions sidebar -->
+      <aside class="sessions-panel">
+        <div class="panel-header">
+          <h2>Sessions</h2>
+          <span class="count" id="sessionCount">0</span>
+        </div>
+        <input type="search" id="sessionSearch" class="search-input session-search" placeholder="过滤 sessionId / userId…" />
+        <div class="session-list" id="sessionList">
+          <!-- populated by JS -->
+        </div>
+      </aside>
+
+      <!-- Trace detail panel -->
+      <section class="trace-panel" id="tracePanel">
+        <div class="empty-state" id="traceEmpty">
+          <p>从左侧选择一个 session 查看其执行流程</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Modal for full content -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <span class="modal-title" id="modalTitle">详情</span>
+        <button class="modal-close" id="modalClose">&times;</button>
+      </div>
+      <pre class="modal-body" id="modalBody"></pre>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="trace_model.js"></script>
+  <script src="viewer.js"></script>
+</body>
+</html>

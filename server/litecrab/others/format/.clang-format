@@ -1,0 +1,64 @@
+---
+Language: C
+BasedOnStyle: LLVM
+
+# 缩进 - 4 空格,不使用 Tab
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+ConstructorInitializerIndentWidth: 4
+
+# 行宽限制
+ColumnLimit: 100
+
+# 大括号风格 - K&R (开括号在同一行尾)
+BreakBeforeBraces: Attach
+
+# 指针风格 - * 靠左 (如 char *p)
+PointerAlignment: Left
+DerivePointerAlignment: false
+
+# 对齐
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: None
+AlignConsecutiveDeclarations: None
+AlignTrailingComments: true
+AlignOperands: Align
+AlignEscapedNewlines: Left
+
+# 短语句 - 强制换行,禁止把多条语句塞到一行
+AllowShortBlocksOnASingleLine: Empty
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# 空格规则 - 关键修复点 (逗号、分号、运算符、关键字后都要空格)
+SpaceAfterCStyleCast: true
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyBlock: false
+SpaceInEmptyParentheses: false
+SpacesInCStyleCastParentheses: false
+SpacesInContainerLiterals: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+SpacesBeforeTrailingComments: 1
+BitFieldColonSpacing: Both
+
+# 参数打包 - 不允许参数挤在一行
+BinPackArguments: false
+BinPackParameters: false
+
+# include 排序
+IncludeBlocks: Regroup
+SortIncludes: CaseSensitive
+
+# 空行
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 2
+
+# 其他
+ReflowComments: true
+Standard: Cpp11

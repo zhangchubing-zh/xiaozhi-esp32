@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="h-full">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LiteCrab · Agent Console</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace']
+                    },
+                    keyframes: {
+                        'fade-in': { '0%': { opacity: '0', transform: 'translateY(4px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+                        'blink': { '0%, 100%': { opacity: '0.2' }, '50%': { opacity: '1' } }
+                    },
+                    animation: {
+                        'fade-in': 'fade-in 0.25s ease-out',
+                        'blink': 'blink 1.2s infinite'
+                    }
+                }
+            }
+        };
+    </script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <style>
+        html, body { height: 100%; }
+        body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgb(203 213 225 / 0.6); border-radius: 8px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgb(148 163 184 / 0.8); }
+        .dark ::-webkit-scrollbar-thumb { background: rgb(51 65 85 / 0.7); }
+        .dark ::-webkit-scrollbar-thumb:hover { background: rgb(71 85 105 / 0.9); }
+        .prose-chat { line-height: 1.7; word-wrap: break-word; overflow-wrap: anywhere; }
+        .prose-chat p { margin: 0 0 0.75rem; }
+        .prose-chat p:last-child { margin-bottom: 0; }
+        .prose-chat h1, .prose-chat h2, .prose-chat h3, .prose-chat h4 { font-weight: 600; margin: 1rem 0 0.5rem; line-height: 1.3; }
+        .prose-chat h1 { font-size: 1.3rem; } .prose-chat h2 { font-size: 1.15rem; } .prose-chat h3 { font-size: 1.05rem; }
+        .prose-chat ul, .prose-chat ol { margin: 0 0 0.75rem; padding-left: 1.5rem; }
+        .prose-chat ul { list-style-type: disc; }
+        .prose-chat ol { list-style-type: decimal; }
+        .prose-chat li > ul, .prose-chat li > ol { margin-top: 0.5rem; }
+        .prose-chat li { margin: 0.25rem 0; }
+        .prose-chat a { color: #4f46e5; text-decoration: underline; text-underline-offset: 2px; }
+        .dark .prose-chat a { color: #818cf8; }
+        .prose-chat blockquote { border-left: 3px solid rgb(99 102 241 / 0.5); padding-left: 0.75rem; margin: 0 0 0.75rem; color: rgb(107 114 128); }
+        .dark .prose-chat blockquote { color: rgb(156 163 175); }
+        .prose-chat code:not(pre code) { background: rgb(241 245 249); color: #db2777; padding: 0.1rem 0.35rem; border-radius: 4px; font-size: 0.85em; }
+        .dark .prose-chat code:not(pre code) { background: rgb(30 41 59); color: #f472b6; }
+        .prose-chat pre { margin: 0 0 0.75rem; border-radius: 10px; overflow: hidden; }
+        .prose-chat pre code { display: block; padding: 0.9rem 1rem; font-size: 0.85rem; line-height: 1.55; background: #0d1117; color: #e6edf3; overflow-x: auto; }
+        .prose-chat table { width: 100%; border-collapse: collapse; margin: 0 0 0.75rem; font-size: 0.9em; }
+        .prose-chat th, .prose-chat td { border: 1px solid rgb(226 232 240); padding: 0.4rem 0.6rem; text-align: left; }
+        .dark .prose-chat th, .dark .prose-chat td { border-color: rgb(51 65 85); }
+        .prose-chat th { background: rgb(248 250 252); font-weight: 600; }
+        .dark .prose-chat th { background: rgb(30 41 59); }
+        .prose-chat hr { border: 0; border-top: 1px solid rgb(226 232 240); margin: 1rem 0; }
+        .dark .prose-chat hr { border-color: rgb(51 65 85); }
+        .cursor-blink::after { content: '▍'; margin-left: 1px; animation: blink 1s steps(2) infinite; color: rgb(99 102 241); }
+        .sidebar-transition { transition: transform 0.25s ease, width 0.25s ease; }
+    </style>
+</head>
+<body class="h-full bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100 font-sans flex overflow-hidden">
+
+    <!-- 侧边栏遮罩（移动端） -->
+    <div id="sidebar-overlay" class="fixed inset-0 bg-black/40 z-30 hidden lg:hidden"></div>
+
+    <!-- 侧边栏 -->
+    <aside id="sidebar" class="sidebar-transition fixed lg:static inset-y-0 left-0 z-40 w-72 -translate-x-full lg:translate-x-0 flex flex-col bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800">
+        <!-- 品牌 + 新建对话 -->
+        <div class="px-3 py-3 flex items-center justify-between gap-2 border-b border-gray-200 dark:border-gray-800">
+            <div class="flex items-center gap-2 min-w-0">
+                <div class="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-sm shrink-0">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                </div>
+                <div class="min-w-0">
+                    <div class="text-sm font-semibold leading-tight truncate">LiteCrab</div>
+                    <div class="text-[11px] text-gray-400 leading-tight">Agent Console</div>
+                </div>
+            </div>
+            <button id="sidebar-close" class="lg:hidden p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800" title="收起">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+        </div>
+
+        <div class="p-2">
+            <button id="new-chat-btn" class="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 active:scale-[0.98] transition shadow-sm">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+                新建对话
+            </button>
+        </div>
+
+        <!-- 会话列表 -->
+        <div class="px-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">历史会话</div>
+        <div id="conversation-list" class="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5"></div>
+
+        <!-- 侧边栏底部 -->
+        <div class="px-2 py-2 border-t border-gray-200 dark:border-gray-800 space-y-1">
+            <div class="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-xs">
+                <div class="flex items-center gap-2 min-w-0">
+                    <span id="conn-dot" class="h-2 w-2 rounded-full bg-yellow-400 shrink-0"></span>
+                    <span id="conn-text" class="text-gray-500 dark:text-gray-400 truncate">初始化中</span>
+                </div>
+                <span id="conn-target" class="text-[10px] text-gray-400 font-mono"></span>
+            </div>
+            <button id="theme-toggle" class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300">
+                <svg id="icon-sun" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                <svg id="icon-moon" class="w-4 h-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9 9 0 008.354-5.646z" /></svg>
+                <span id="theme-label">深色模式</span>
+            </button>
+            <button id="about-btn" class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                关于
+            </button>
+        </div>
+    </aside>
+
+    <!-- 主区域 -->
+    <div class="flex-1 flex flex-col min-w-0">
+        <!-- 顶栏 -->
+        <header class="h-14 shrink-0 flex items-center justify-between gap-3 px-3 sm:px-4 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 backdrop-blur">
+            <div class="flex items-center gap-2 min-w-0">
+                <button id="sidebar-open" class="lg:hidden p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800" title="菜单">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" /></svg>
+                </button>
+                <div class="flex items-center gap-2 min-w-0">
+                    <div class="h-7 w-7 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0 lg:hidden">
+                        <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                    </div>
+                    <h1 id="conv-title" class="text-sm font-semibold truncate">新对话</h1>
+                </div>
+            </div>
+            <div class="flex items-center gap-1">
+                <button id="rename-btn" class="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400" title="重命名">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                </button>
+                <button id="clear-btn" class="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400" title="清空当前对话">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- 消息区 / 欢迎页 -->
+        <main id="chat-container" class="flex-1 overflow-y-auto">
+            <!-- 空状态：欢迎页 -->
+            <div id="welcome-view" class="h-full flex flex-col items-center justify-center px-4 py-10">
+                <div class="w-full max-w-2xl text-center">
+                    <div class="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-lg shadow-indigo-500/20 mb-4">
+                        <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                    </div>
+                    <h2 class="text-2xl font-semibold mb-1">LiteCrab Agent</h2>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-8">基于 C11 运行时的能源 Agent · 支持文件、搜索、Shell、Skill 工具调用</p>
+                    <div id="prompt-suggestions" class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left"></div>
+                </div>
+            </div>
+
+            <!-- 消息列表 -->
+            <div id="messages" class="hidden w-full max-w-3xl mx-auto px-4 py-6 space-y-6"></div>
+        </main>
+
+        <!-- 输入区 -->
+        <footer class="shrink-0 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+            <div class="w-full max-w-3xl mx-auto px-4 py-3">
+                <div class="relative flex items-end gap-2 rounded-2xl border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition">
+                    <textarea
+                        id="message-input"
+                        rows="1"
+                        class="flex-1 resize-none bg-transparent px-4 py-3.5 text-sm outline-none max-h-40 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                        placeholder="输入问题或指令…  Enter 发送，Shift+Enter 换行"></textarea>
+                    <div class="flex items-center gap-1 p-2">
+                        <button id="stop-btn" class="hidden items-center justify-center h-9 w-9 rounded-xl bg-red-500 hover:bg-red-600 text-white transition" title="停止">
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                        </button>
+                        <button id="send-btn" class="flex items-center justify-center h-9 w-9 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition active:scale-95" title="发送">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M13 6l6 6-6 6" /></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-1.5 flex items-center justify-between text-[11px] text-gray-400">
+                    <span>Agent 通过 TCP 连接 LiteCrab 运行时</span>
+                    <span id="msg-count"></span>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- 关于弹窗 -->
+    <div id="about-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+        <div class="w-full max-w-md rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-xl p-6">
+            <div class="flex items-start justify-between mb-3">
+                <h3 class="text-lg font-semibold">关于 LiteCrab</h3>
+                <button id="about-close" class="p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
+            </div>
+            <div class="text-sm text-gray-600 dark:text-gray-300 space-y-2">
+                <p>LiteCrab 是按设计文档实现的 C11 Agent Runtime，前端通过 Flask 反向代理到板端 TCP 服务。</p>
+                <p class="text-xs text-gray-400">支持多会话、Markdown 渲染、代码高亮、深色模式。会话历史存储于浏览器本地。</p>
+            </div>
+            <div class="mt-4 text-xs text-gray-400 font-mono" id="about-target"></div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="hidden fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg bg-gray-900 text-white text-sm shadow-lg dark:bg-gray-100 dark:text-gray-900"></div>
+
+    <script>
+        /* ========== 常量与状态 ========== */
+        const API_URL = '/api/chat';
+        const CLOSE_URL = '/api/close';
+        const HEALTH_URL = '/api/health';
+        const STORE_KEY = 'litecrab_conversations_v1';
+        const THEME_KEY = 'litecrab_theme';
+
+        const SUGGESTIONS = [
+            { icon: 'M9 12h6m-6 4h6m-6-8h6M5 4h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5a1 1 0 011-1z', title: '总结项目核心功能', prompt: '阅读 README.md 并总结 LiteCrab 的核心功能' },
+            { icon: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z', title: '查找实现逻辑', prompt: '查找代码中处理 TCP 请求的核心逻辑并说明数据流' },
+            { icon: 'M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z', title: '运行测试', prompt: '运行测试并报告结果' },
+            { icon: 'M19.428 15.428a2 2 0 00-1.0-.971A2 2 0 0118 12.5V12a6 6 0 00-12 0v.5a2 2 0 01-1.0 1.957 2 2 0 00.999 3.957', title: '解释 Skill 机制', prompt: '解释 LiteCrab 的 Skill 加载与执行机制' }
+        ];
+
+        let conversations = [];           // [{ id, title, messages:[{role, content, ts}], createdAt }]
+        let activeId = null;
+        let isGenerating = false;
+        let abortTyping = false;
+
+        /* ========== DOM ========== */
+        const $ = (id) => document.getElementById(id);
+        const chatContainer = $('chat-container');
+        const messagesEl = $('messages');
+        const welcomeEl = $('welcome-view');
+        const messageInput = $('message-input');
+        const sendBtn = $('send-btn');
+        const stopBtn = $('stop-btn');
+        const connDot = $('conn-dot');
+        const connText = $('conn-text');
+        const convList = $('conversation-list');
+        const convTitle = $('conv-title');
+
+        /* ========== 主题 ========== */
+        function applyTheme(theme) {
+            const dark = theme === 'dark';
+            document.documentElement.classList.toggle('dark', dark);
+            $('icon-sun').classList.toggle('hidden', dark);
+            $('icon-moon').classList.toggle('hidden', !dark);
+            $('theme-label').textContent = dark ? '浅色模式' : '深色模式';
+        }
+        $('theme-toggle').addEventListener('click', () => {
+            const next = document.documentElement.classList.contains('dark') ? 'light' : 'dark';
+            applyTheme(next);
+            localStorage.setItem(THEME_KEY, next);
+        });
+
+        /* ========== 健康检查 ========== */
+        async function checkHealth() {
+            setStatus('busy', '检测中');
+            try {
+                const r = await fetch(HEALTH_URL);
+                const data = await r.json();
+                if (data.success) {
+                    setStatus('online', '已连接');
+                    $('conn-target').textContent = data.agent || '';
+                    $('about-target').textContent = 'Agent: ' + (data.agent || '');
+                } else {
+                    setStatus('offline', '未连接');
+                    $('conn-target').textContent = data.agent || '';
+                }
+            } catch {
+                setStatus('offline', '连接失败');
+            }
+        }
+        function setStatus(mode, text) {
+            connDot.classList.remove('bg-green-500', 'bg-yellow-400', 'bg-red-500');
+            if (mode === 'online') connDot.classList.add('bg-green-500');
+            else if (mode === 'busy') connDot.classList.add('bg-yellow-400');
+            else connDot.classList.add('bg-red-500');
+            connText.textContent = text;
+        }
+
+        /* ========== 会话持久化 ========== */
+        function loadConversations() {
+            try {
+                const raw = localStorage.getItem(STORE_KEY);
+                conversations = raw ? JSON.parse(raw) : [];
+            } catch { conversations = []; }
+        }
+        function saveConversations() {
+            try { localStorage.setItem(STORE_KEY, JSON.stringify(conversations)); } catch (e) { showToast('本地存储已满，无法保存历史'); }
+        }
+        function getActive() { return conversations.find(c => c.id === activeId); }
+
+        function newConversation() {
+            if (isGenerating) return;
+            const c = { id: uuid(), title: '新对话', messages: [], createdAt: Date.now() };
+            conversations.unshift(c);
+            activeId = c.id;
+            saveConversations();
+            renderConversationList();
+            renderMessages();
+            messageInput.focus();
+            closeSidebarMobile();
+        }
+        $('new-chat-btn').addEventListener('click', newConversation);
+
+        function switchConversation(id) {
+            if (isGenerating || id === activeId) return;
+            activeId = id;
+            renderConversationList();
+            renderMessages();
+            closeSidebarMobile();
+        }
+
+        function deleteConversation(id, ev) {
+            ev?.stopPropagation();
+            if (conversations.length <= 1) { showToast('至少保留一个会话'); return; }
+            const idx = conversations.findIndex(c => c.id === id);
+            if (idx === -1) return;
+            // 关闭后端 session
+            navigator.sendBeacon(CLOSE_URL, new Blob([JSON.stringify({ session_id: id })], { type: 'application/json' }));
+            conversations.splice(idx, 1);
+            if (activeId === id) activeId = conversations[Math.max(0, idx - 1)].id;
+            saveConversations();
+            renderConversationList();
+            renderMessages();
+        }
+
+        function renameConversation(id) {
+            const c = conversations.find(c => c.id === id);
+            if (!c) return;
+            const name = prompt('重命名会话', c.title);
+            if (name && name.trim()) { c.title = name.trim(); saveConversations(); renderConversationList(); updateHeader(); }
+        }
+        $('rename-btn').addEventListener('click', () => activeId && renameConversation(activeId));
+
+        function clearCurrent() {
+            const c = getActive();
+            if (!c || c.messages.length === 0) return;
+            if (!confirm('清空当前对话的所有消息？')) return;
+            // 关闭后端 session 以重置上下文
+            navigator.sendBeacon(CLOSE_URL, new Blob([JSON.stringify({ session_id: c.id })], { type: 'application/json' }));
+            c.messages = [];
+            c.title = '新对话';
+            saveConversations();
+            renderConversationList();
+            renderMessages();
+        }
+        $('clear-btn').addEventListener('click', clearCurrent);
+
+        /* ========== 侧边栏渲染 ========== */
+        function renderConversationList() {
+            convList.innerHTML = '';
+            if (conversations.length === 0) {
+                convList.innerHTML = '<div class="text-xs text-gray-400 px-2 py-4 text-center">暂无历史会话</div>';
+                return;
+            }
+            conversations.forEach(c => {
+                const active = c.id === activeId;
+                const item = document.createElement('div');
+                item.className = `group flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-pointer text-sm transition ${active ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'}`;
+                item.title = c.title;
+                item.innerHTML = `
+                    <svg class="w-4 h-4 shrink-0 ${active ? 'text-indigo-500' : 'text-gray-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h8M8 8h8m-8 8h5m1 9a9 9 0 110-18 9 9 0 010 18z" /></svg>
+                    <span class="flex-1 truncate">${escapeHTML(c.title)}</span>
+                    <button class="del-btn opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-red-500" title="删除">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" /></svg>
+                    </button>`;
+                item.addEventListener('click', () => switchConversation(c.id));
+                item.querySelector('.del-btn').addEventListener('click', (e) => deleteConversation(c.id, e));
+                convList.appendChild(item);
+            });
+        }
+
+        /* ========== 欢迎页示例 ========== */
+        function renderSuggestions() {
+            const grid = $('prompt-suggestions');
+            grid.innerHTML = '';
+            SUGGESTIONS.forEach(s => {
+                const btn = document.createElement('button');
+                btn.className = 'flex items-start gap-3 p-3 rounded-xl border border-gray-200 dark:border-gray-800 hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50/50 dark:hover:bg-indigo-500/5 transition text-left';
+                btn.innerHTML = `
+                    <div class="h-8 w-8 rounded-lg bg-indigo-100 dark:bg-indigo-500/15 flex items-center justify-center shrink-0">
+                        <svg class="w-4 h-4 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="${s.icon}" /></svg>
+                    </div>
+                    <div class="min-w-0">
+                        <div class="text-sm font-medium text-gray-800 dark:text-gray-100">${escapeHTML(s.title)}</div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400 truncate">${escapeHTML(s.prompt)}</div>
+                    </div>`;
+                btn.addEventListener('click', () => { messageInput.value = s.prompt; messageInput.focus(); autoResize(); });
+                grid.appendChild(btn);
+            });
+        }
+
+        /* ========== 消息渲染 ========== */
+        function renderMessages() {
+            const c = getActive();
+            updateHeader();
+            if (!c || c.messages.length === 0) {
+                welcomeEl.classList.remove('hidden');
+                messagesEl.classList.add('hidden');
+                messagesEl.innerHTML = '';
+            } else {
+                welcomeEl.classList.add('hidden');
+                messagesEl.classList.remove('hidden');
+                messagesEl.innerHTML = '';
+                c.messages.forEach(m => messagesEl.appendChild(buildMessageEl(m.role, m.content, false)));
+            }
+            updateMsgCount();
+            scrollToBottom();
+        }
+
+        function updateHeader() {
+            const c = getActive();
+            convTitle.textContent = c ? c.title : '新对话';
+        }
+
+        function buildMessageEl(role, content, streaming) {
+            const wrap = document.createElement('div');
+            wrap.className = 'flex gap-3 animate-fade-in ' + (role === 'user' ? 'flex-row-reverse' : 'flex-row');
+
+            const avatar = document.createElement('div');
+            avatar.className = 'h-8 w-8 rounded-lg flex items-center justify-center shrink-0 text-xs font-semibold ' +
+                (role === 'user'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white');
+            avatar.innerHTML = role === 'user'
+                ? '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>'
+                : '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>';
+
+            const bubble = document.createElement('div');
+            bubble.className = 'min-w-0 max-w-[85%] ' + (role === 'user' ? 'items-end' : 'items-start');
+
+            const body = document.createElement('div');
+            body.className = role === 'user'
+                ? 'inline-block px-4 py-2.5 rounded-2xl rounded-tr-sm bg-indigo-600 text-white text-sm whitespace-pre-wrap break-words'
+                : 'inline-block px-4 py-3 rounded-2xl rounded-tl-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-sm text-gray-800 dark:text-gray-100 shadow-sm';
+
+            if (role === 'assistant') {
+                const inner = document.createElement('div');
+                inner.className = 'prose-chat';
+                if (streaming) { inner.classList.add('cursor-blink'); }
+                inner.innerHTML = renderMarkdown(content);
+                body.appendChild(inner);
+                // 操作栏
+                const actions = document.createElement('div');
+                actions.className = 'flex items-center gap-1 mt-1.5 opacity-0 hover:opacity-100 transition';
+                const copyBtn = document.createElement('button');
+                copyBtn.className = 'text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 flex items-center gap-1';
+                copyBtn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg> 复制';
+                copyBtn.addEventListener('click', () => { copyToClipboard(content); copyBtn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg> 已复制'; setTimeout(() => copyBtn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg> 复制', 1500); });
+                actions.appendChild(copyBtn);
+                actions.style.opacity = '1';
+                body.appendChild(actions);
+                // 高亮代码
+                body.querySelectorAll('pre code').forEach(el => { try { hljs.highlightElement(el); } catch {} });
+                // 代码块复制按钮
+                body.querySelectorAll('pre').forEach(pre => addCodeCopyBtn(pre));
+            } else {
+                body.textContent = content;
+            }
+
+            bubble.appendChild(body);
+            wrap.appendChild(avatar);
+            wrap.appendChild(bubble);
+            return wrap;
+        }
+
+        function addCodeCopyBtn(pre) {
+            if (pre.querySelector('.code-copy')) return;
+            const bar = document.createElement('div');
+            bar.className = 'code-copy absolute top-2 right-2 flex items-center gap-1 text-[11px] text-gray-300 hover:text-white bg-gray-700/60 hover:bg-gray-700 px-2 py-1 rounded cursor-pointer transition opacity-0 group-hover:opacity-100';
+            bar.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg> 复制';
+            bar.addEventListener('click', (e) => { e.preventDefault(); const code = pre.querySelector('code'); if (code) { copyToClipboard(code.textContent); bar.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg> 已复制'; setTimeout(() => bar.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg> 复制', 1500); } });
+            pre.style.position = 'relative';
+            pre.classList.add('group');
+            pre.appendChild(bar);
+        }
+
+        function renderMarkdown(text) {
+            if (!text) return '<span class="text-gray-400">…</span>';
+            try {
+                const raw = marked.parse(text);
+                return DOMPurify.sanitize(raw, { ADD_ATTR: ['target'] });
+            } catch {
+                return escapeHTML(text).replace(/\n/g, '<br>');
+            }
+        }
+
+        function appendMessage(role, content) {
+            const c = getActive();
+            if (!c) return;
+            c.messages.push({ role, content, ts: Date.now() });
+            if (role === 'user' && (c.title === '新对话' || !c.title)) {
+                c.title = content.slice(0, 24) + (content.length > 24 ? '…' : '');
+                updateHeader();
+                renderConversationList();
+            }
+            // 仅在当前会话时追加 DOM
+            if (welcomeEl.classList.contains('hidden') === false) renderMessages();
+            else {
+                const el = buildMessageEl(role, content, false);
+                messagesEl.appendChild(el);
+            }
+            saveConversations();
+            updateMsgCount();
+            scrollToBottom();
+        }
+
+        function updateMsgCount() {
+            const c = getActive();
+            $('msg-count').textContent = c && c.messages.length ? `${c.messages.length} 条消息` : '';
+        }
+
+        function scrollToBottom() {
+            requestAnimationFrame(() => { chatContainer.scrollTop = chatContainer.scrollHeight; });
+        }
+
+        /* ========== 发送 / 流式打字 ========== */
+        async function sendMessage() {
+            const text = messageInput.value.trim();
+            if (!text || isGenerating) return;
+            appendMessage('user', text);
+
+            messageInput.value = '';
+            autoResize();
+            setGenerating(true);
+            setStatus('busy', '请求处理中');
+
+            const c = getActive();
+            // 创建 assistant 占位
+            const el = buildMessageEl('assistant', '', true);
+            messagesEl.appendChild(el);
+            const prose = el.querySelector('.prose-chat');
+
+            try {
+                const resp = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: c.id, message: text })
+                });
+                const result = await resp.json();
+                if (!resp.ok || !result.success) throw new Error(result.error || `HTTP ${resp.status}`);
+
+                const full = result.response || '无返回结果';
+                await typeWriter(prose, full, el);
+
+                // 落库
+                c.messages.push({ role: 'assistant', content: full, ts: Date.now() });
+                saveConversations();
+                setStatus('online', '就绪');
+            } catch (err) {
+                prose.classList.remove('cursor-blink');
+                prose.innerHTML = `<span class="text-red-500">出错：${escapeHTML(err.message || '网络错误')}</span>`;
+                setStatus('offline', '请求失败');
+            } finally {
+                setGenerating(false);
+                updateMsgCount();
+            }
+        }
+
+        async function typeWriter(prose, text, rootEl) {
+            prose.innerHTML = '';
+            const chars = Array.from(text);
+            const total = chars.length;
+            // 自适应分块：长文本按块输出，避免逐字符太慢
+            let i = 0;
+            while (i < total) {
+                if (abortTyping) { prose.classList.remove('cursor-blink'); prose.innerHTML = renderMarkdown(text); rootEl.querySelectorAll('pre code').forEach(el => { try { hljs.highlightElement(el); } catch {} }); rootEl.querySelectorAll('pre').forEach(pre => addCodeCopyBtn(pre)); return; }
+                const chunkSize = total > 400 ? Math.max(2, Math.ceil(total / 120)) : 1;
+                const slice = chars.slice(i, i + chunkSize).join('');
+                i += chunkSize;
+                // 增量渲染（性能考虑：每若干步重渲染一次 markdown）
+                prose.innerHTML = renderMarkdown(chars.slice(0, i).join(''));
+                rootEl.querySelectorAll('pre code').forEach(el => { try { hljs.highlightElement(el); } catch {} });
+                rootEl.querySelectorAll('pre').forEach(pre => addCodeCopyBtn(pre));
+                scrollToBottom();
+                await sleep(total > 400 ? 12 : 20);
+            }
+            prose.classList.remove('cursor-blink');
+        }
+
+        function setGenerating(on) {
+            isGenerating = on;
+            abortTyping = false;
+            sendBtn.classList.toggle('hidden', on);
+            sendBtn.disabled = on;
+            stopBtn.classList.toggle('hidden', !on);
+            stopBtn.classList.toggle('flex', on);
+        }
+
+        stopBtn.addEventListener('click', () => { abortTyping = true; });
+
+        sendBtn.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+        });
+        messageInput.addEventListener('input', autoResize);
+        function autoResize() {
+            messageInput.style.height = 'auto';
+            messageInput.style.height = Math.min(messageInput.scrollHeight, 160) + 'px';
+        }
+
+        /* ========== 工具函数 ========== */
+        function escapeHTML(str) {
+            return String(str).replace(/[&<>'"]/g, t => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[t] || t));
+        }
+        function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+        function copyToClipboard(text) {
+            if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+            else fallbackCopy(text);
+        }
+        function fallbackCopy(text) {
+            const ta = document.createElement('textarea');
+            ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select();
+            try { document.execCommand('copy'); } catch {}
+            document.body.removeChild(ta);
+        }
+        let toastTimer = null;
+        function showToast(msg) {
+            const t = $('toast');
+            t.textContent = msg;
+            t.classList.remove('hidden');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => t.classList.add('hidden'), 2200);
+        }
+
+        /* ========== 侧边栏移动端 ========== */
+        function openSidebarMobile() { $('sidebar').classList.remove('-translate-x-full'); $('sidebar-overlay').classList.remove('hidden'); }
+        function closeSidebarMobile() { $('sidebar').classList.add('-translate-x-full'); $('sidebar-overlay').classList.add('hidden'); }
+        $('sidebar-open').addEventListener('click', openSidebarMobile);
+        $('sidebar-close').addEventListener('click', closeSidebarMobile);
+        $('sidebar-overlay').addEventListener('click', closeSidebarMobile);
+
+        /* ========== 关于弹窗 ========== */
+        $('about-btn').addEventListener('click', () => $('about-modal').classList.remove('hidden'));
+        $('about-close').addEventListener('click', () => $('about-modal').classList.add('hidden'));
+        $('about-modal').addEventListener('click', (e) => { if (e.target.id === 'about-modal') $('about-modal').classList.add('hidden'); });
+
+        /* ========== 页面关闭：清理后端 session ========== */
+        window.addEventListener('beforeunload', () => {
+            const c = getActive();
+            if (c) navigator.sendBeacon(CLOSE_URL, new Blob([JSON.stringify({ session_id: c.id })], { type: 'application/json' }));
+        });
+
+        /* ========== 工具：UUID（兼容非安全上下文，例如经 LAN IP 访问） ========== */
+        function uuid() {
+            if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+                try { return window.crypto.randomUUID(); } catch (e) {}
+            }
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                const r = Math.random() * 16 | 0;
+                const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        /* ========== 初始化（置于末尾：所有 addEventListener 已注册；即使此处抛错，按钮仍可用） ========== */
+        try {
+            if (window.marked) {
+                marked.setOptions({ breaks: true, gfm: true });
+            }
+            applyTheme(localStorage.getItem(THEME_KEY) || 'light');
+            loadConversations();
+            renderConversationList();
+            if (conversations.length === 0) {
+                newConversation();
+            } else {
+                activeId = conversations[0].id;
+                renderConversationList();
+                renderMessages();
+            }
+            renderSuggestions();
+            updateMsgCount();
+            checkHealth();
+        } catch (e) {
+            console.error('[LiteCrab UI] init failed:', e);
+            const t = $('toast');
+            if (t) { t.textContent = '初始化失败：' + (e && e.message ? e.message : String(e)); t.classList.remove('hidden'); }
+        }
+    </script>
+</body>
+</html>

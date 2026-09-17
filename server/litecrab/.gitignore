@@ -1,0 +1,15 @@
+/build*/
+/build-5091*/
+/logs/
+# 本项目策略：API key 直接写入 config（用户要求），运行时配置随仓库提交
+# others/transfer_station/config.json
+third_party/
+/.crab/
+*.core
+core
+
+# skill 编译产物（二进制不应提交，按目标架构本地构建）
+skills/PLC_Diagnosis/scripts/main
+
+# sysroot 构建下载和临时目录
+/tmp/sd5091-build/
