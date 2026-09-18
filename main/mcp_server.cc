@@ -7,8 +7,10 @@
 #include <esp_log.h>
 #include <esp_app_desc.h>
 #include <algorithm>
+#include <condition_variable>
 #include <cstring>
 #include <esp_pthread.h>
+#include <mutex>
 
 #include "application.h"
 #include "display.h"
@@ -558,3 +560,156 @@ void McpServer::DoToolCall(int id, const std::string& tool_name, const cJSON* to
         }
     });
 }
+
+std::string McpServer::GetToolsListJson() const {
+    // Build an OpenAI tools array: [{"type":"function","function":{name,description,parameters}}]
+    // McpTool::to_json() returns {name,description,inputSchema}. We wrap into the
+    // OpenAI shape expected by /v1/chat/completions.
+    std::string out = "[";
+    bool first = true;
+    for (const auto* tool : tools_) {
+        if (tool->user_only()) continue;
+        if (!first) out += ",";
+        first = false;
+        // Reuse tool->to_json() and wrap. Build manually to avoid double-parse cost.
+        std::string inner = tool->to_json();  // {name,description,inputSchema}
+        // Rename inputSchema -> parameters for OpenAI compat
+        size_t pos = inner.find("\"inputSchema\"");
+        if (pos != std::string::npos) {
+            inner.replace(pos, strlen("\"inputSchema\""), "\"parameters\"");
+        }
+        out += "{\"type\":\"function\",\"function\":";
+        out += inner;
+        out += "}";
+    }
+    out += "]";
+    return out;
+}
+
+std::string McpServer::CallToolDirectly(const std::string& tool_name,
+                                        const cJSON* tool_arguments) {
+    auto tool_iter = std::find_if(tools_.begin(), tools_.end(),
+                                  [&tool_name](const McpTool* t) {
+                                      return t->name() == tool_name;
+                                  });
+    if (tool_iter == tools_.end()) {
+        ESP_LOGE(TAG, "CallToolDirectly: Unknown tool: %s", tool_name.c_str());
+        cJSON* err = cJSON_CreateObject();
+        cJSON_AddStringToObject(err, "jsonrpc", "2.0");
+        cJSON* e = cJSON_CreateObject();
+        cJSON_AddNumberToObject(e, "code", -32601);
+        cJSON_AddStringToObject(e, "message", ("Unknown tool: " + tool_name).c_str());
+        cJSON_AddItemToObject(err, "error", e);
+        char* s = cJSON_PrintUnformatted(err);
+        std::string out(s);
+        cJSON_free(s);
+        cJSON_Delete(err);
+        return out;
+    }
+
+    // Build PropertyList from arguments (same validation as DoToolCall)
+    PropertyList arguments = (*tool_iter)->properties();
+    try {
+        for (auto& argument : arguments) {
+            bool found = false;
+            if (cJSON_IsObject(tool_arguments)) {
+                auto value = cJSON_GetObjectItem(tool_arguments, argument.name().c_str());
+                if (argument.type() == kPropertyTypeBoolean && cJSON_IsBool(value)) {
+                    argument.set_value<bool>(value->valueint == 1);
+                    found = true;
+                } else if (argument.type() == kPropertyTypeInteger && cJSON_IsNumber(value)) {
+                    argument.set_value<int>(value->valueint);
+                    found = true;
+                } else if (argument.type() == kPropertyTypeString && cJSON_IsString(value)) {
+                    argument.set_value<std::string>(value->valuestring);
+                    found = true;
+                }
+            }
+            if (!argument.has_default_value() && !found) {
+                std::string msg = "Missing valid argument: " + argument.name();
+                ESP_LOGE(TAG, "CallToolDirectly: %s", msg.c_str());
+                cJSON* err = cJSON_CreateObject();
+                cJSON_AddStringToObject(err, "jsonrpc", "2.0");
+                cJSON* e = cJSON_CreateObject();
+                cJSON_AddNumberToObject(e, "code", -32602);
+                cJSON_AddStringToObject(e, "message", msg.c_str());
+                cJSON_AddItemToObject(err, "error", e);
+                char* s = cJSON_PrintUnformatted(err);
+                std::string out(s);
+                cJSON_free(s);
+                cJSON_Delete(err);
+                return out;
+            }
+        }
+    } catch (const std::exception& e) {
+        ESP_LOGE(TAG, "CallToolDirectly arg error: %s", e.what());
+        cJSON* err = cJSON_CreateObject();
+        cJSON_AddStringToObject(err, "jsonrpc", "2.0");
+        cJSON* er = cJSON_CreateObject();
+        cJSON_AddNumberToObject(er, "code", -32602);
+        cJSON_AddStringToObject(er, "message", e.what());
+        cJSON_AddItemToObject(err, "error", er);
+        char* s = cJSON_PrintUnformatted(err);
+        std::string out(s);
+        cJSON_free(s);
+        cJSON_Delete(err);
+        return out;
+    }
+
+    // Dispatch to main task and wait synchronously.
+    struct SyncCtx {
+        std::mutex mu;
+        std::condition_variable cv;
+        bool done = false;
+        std::string result;
+        bool is_error = false;
+    };
+    auto ctx = std::make_shared<SyncCtx>();
+    McpTool* tool_ptr = *tool_iter;
+    auto& app = Application::GetInstance();
+    app.Schedule([ctx, tool_ptr, arguments = std::move(arguments)]() {
+        std::string result_str;
+        bool is_error = false;
+        try {
+            result_str = tool_ptr->Call(arguments);
+        } catch (const std::exception& e) {
+            ESP_LOGE(TAG, "CallToolDirectly exec: %s", e.what());
+            cJSON* err = cJSON_CreateObject();
+            cJSON_AddStringToObject(err, "jsonrpc", "2.0");
+            cJSON* er = cJSON_CreateObject();
+            cJSON_AddNumberToObject(er, "code", -32603);
+            cJSON_AddStringToObject(er, "message", e.what());
+            cJSON_AddItemToObject(err, "error", er);
+            char* s = cJSON_PrintUnformatted(err);
+            result_str = s;
+            cJSON_free(s);
+            cJSON_Delete(err);
+            is_error = true;
+        }
+        std::lock_guard<std::mutex> lk(ctx->mu);
+        ctx->result = std::move(result_str);
+        ctx->is_error = is_error;
+        ctx->done = true;
+        ctx->cv.notify_one();
+    });
+
+    std::unique_lock<std::mutex> lk(ctx->mu);
+    // 20 second timeout for tool execution
+    if (!ctx->cv.wait_for(lk, std::chrono::seconds(20),
+                          [&ctx] { return ctx->done; })) {
+        ESP_LOGE(TAG, "CallToolDirectly timeout: %s", tool_name.c_str());
+        cJSON* err = cJSON_CreateObject();
+        cJSON_AddStringToObject(err, "jsonrpc", "2.0");
+        cJSON* e = cJSON_CreateObject();
+        cJSON_AddNumberToObject(e, "code", -32000);
+        cJSON_AddStringToObject(e, "message", "Tool execution timeout");
+        cJSON_AddItemToObject(err, "error", e);
+        char* s = cJSON_PrintUnformatted(err);
+        std::string out(s);
+        cJSON_free(s);
+        cJSON_Delete(err);
+        return out;
+    }
+    return ctx->result;
+}
+

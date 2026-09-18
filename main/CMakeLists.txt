@@ -33,6 +33,13 @@ set(SOURCES "audio/audio_codec.cc"
             "protocols/text_glyph_payload.cc"
             "protocols/mqtt_protocol.cc"
             "protocols/websocket_protocol.cc"
+            "protocols/local_agent_protocol.cc"
+            "agent/agent.cc"
+            "agent/conversation.cc"
+            "agent/providers/provider_common.cc"
+            "agent/providers/siliconflow_asr.cc"
+            "agent/providers/siliconflow_llm.cc"
+            "agent/providers/siliconflow_tts.cc"
             "mcp_server.cc"
             "system_info.cc"
             "application.cc"
@@ -43,7 +50,7 @@ set(SOURCES "audio/audio_codec.cc"
             "main.cc"
             )
 
-set(INCLUDE_DIRS "." "display" "display/lvgl_display" "display/lvgl_display/jpg" "audio" "audio/demuxer" "protocols")
+set(INCLUDE_DIRS "." "display" "display/lvgl_display" "display/lvgl_display/jpg" "audio" "audio/demuxer" "protocols" "agent" "agent/providers")
 
 # Add board common files
 list(APPEND SOURCES
@@ -1087,6 +1094,7 @@ idf_component_register(SRCS ${SOURCES}
                         bt
                         fatfs
                         xiaozhi-fonts
+                        espressif__esp_audio_codec
                         ${MAIN_PRIV_REQUIRES_EXTRA}
                     )
 

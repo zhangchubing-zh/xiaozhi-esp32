@@ -1123,4 +1123,61 @@ menu "TAIJIPAI_S3_CONFIG"
         启动双声道
 endmenu
 
+menu "Local Agent"
+    help
+        On-device agent loop configuration. When protocol type is "local_agent"
+        (or "auto" with no OTA server configured), the firmware runs the ASR /
+        LLM / TTS pipeline directly against cloud HTTPS endpoints, removing the
+        need for any external PC/server relay. API keys are read from NVS
+        namespace "agent" at runtime and are NOT stored in this config.
+
+config LOCAL_AGENT_DEFAULT_PROVIDER
+    string "Default cloud provider"
+    default "siliconflow"
+    help
+        Cloud provider used for ASR/LLM/TTS. "siliconflow" is the only
+        fully implemented provider in this revision. Reserved for future
+        "volcengine".
+
+config LOCAL_AGENT_DEFAULT_LLM_MODEL
+    string "Default LLM model"
+    default "Qwen/Qwen3.5-35B-A3B"
+
+config LOCAL_AGENT_DEFAULT_ASR_MODEL
+    string "Default ASR model"
+    default "FunAudioLLM/SenseVoiceSmall"
+
+config LOCAL_AGENT_DEFAULT_TTS_MODEL
+    string "Default TTS model"
+    default "FunAudioLLM/CosyVoice2-0.5B"
+
+config LOCAL_AGENT_DEFAULT_TTS_VOICE
+    string "Default TTS voice"
+    default "FunAudioLLM/CosyVoice2-0.5B:alex"
+
+config LOCAL_AGENT_ASR_TIMEOUT_MS
+    int "ASR HTTPS timeout (ms)"
+    default 30000
+
+config LOCAL_AGENT_LLM_TIMEOUT_MS
+    int "LLM HTTPS timeout (ms)"
+    default 60000
+
+config LOCAL_AGENT_TTS_TIMEOUT_MS
+    int "TTS HTTPS timeout (ms)"
+    default 30000
+
+config LOCAL_AGENT_MAX_AUDIO_SECONDS
+    int "Max recording seconds per turn"
+    default 60
+
+config LOCAL_AGENT_MAX_TOOL_ITERATIONS
+    int "Max LLM tool-call iterations per turn"
+    default 5
+
+config LOCAL_AGENT_CONVERSATION_HISTORY_LIMIT
+    int "Conversation rounds retained in RAM"
+    default 10
+endmenu
+
 endmenu

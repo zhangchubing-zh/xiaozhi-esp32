@@ -4,6 +4,7 @@
 #include "audio_codec.h"
 #include "board.h"
 #include "display.h"
+#include "local_agent_protocol.h"
 #include "mcp_server.h"
 #include "mqtt_protocol.h"
 #include "settings.h"
@@ -376,6 +377,29 @@ void Application::ActivationTask() {
     // Check for new assets version
     CheckAssetsVersion();
 
+    // Local-agent mode runs the ASR/LLM/TTS pipeline on-device and never needs
+    // an OTA check-in server, so skip the version check / activation retries
+    // entirely. The protocol type is read from NVS namespace "protocol" key
+    // "type".
+    // TODO: restore NVS-driven selection once provisioning is in place. For the
+    // first end-to-end bring-up the protocol is force-set to local_agent so the
+    // device never contacts the old PC relay (192.168.43.9) stored in NVS.
+    Settings protocol_settings("protocol", false);
+    std::string protocol_type = protocol_settings.GetString("type", "local_agent");
+    protocol_type = "local_agent";  // force on-device agent; remove after provisioning
+    if (protocol_type == "local_agent") {
+        ESP_LOGI(TAG, "Local-agent mode: skipping OTA version check and activation");
+        // Mark current version valid so the device does not roll back on reboot.
+        ota_->MarkCurrentVersionValid();
+
+        // Initialize the protocol (will instantiate LocalAgentProtocol)
+        InitializeProtocol();
+
+        // Signal completion to main loop
+        xEventGroupSetBits(event_group_, MAIN_EVENT_ACTIVATION_DONE);
+        return;
+    }
+
     // Check for new firmware version
     CheckNewVersion();
 
@@ -542,13 +566,36 @@ void Application::InitializeProtocol() {
 
     display->SetStatus(Lang::Strings::LOADING_PROTOCOL);
 
-    if (ota_->HasMqttConfig()) {
+    // Protocol selection:
+    //   NVS namespace "protocol" key "type" controls the transport.
+    //   "auto"     -> follow the OTA response (mqtt > websocket > mqtt-default)
+    //   "local_agent" -> run the on-device agent loop (no external server)
+    //   "websocket"/"mqtt" -> force the named transport if OTA config exists
+    // TODO: switch this default back to "auto" once NVS provisioning is in place.
+    // For first-pass end-to-end testing we force "local_agent".
+    Settings protocol_settings("protocol", false);
+    std::string protocol_type = protocol_settings.GetString("type", "local_agent");
+    protocol_type = "local_agent";  // force on-device agent; remove after provisioning
+
+    if (protocol_type == "local_agent") {
+        protocol_ = std::make_unique<LocalAgentProtocol>();
+    } else if (protocol_type == "auto") {
+        if (ota_->HasMqttConfig()) {
+            protocol_ = std::make_unique<MqttProtocol>();
+        } else if (ota_->HasWebsocketConfig()) {
+            protocol_ = std::make_unique<WebsocketProtocol>();
+        } else {
+            // No remote server configured: fall back to the on-device agent so
+            // the device is usable without any cloud-server pairing.
+            protocol_ = std::make_unique<LocalAgentProtocol>();
+        }
+    } else if (protocol_type == "mqtt" && ota_->HasMqttConfig()) {
         protocol_ = std::make_unique<MqttProtocol>();
-    } else if (ota_->HasWebsocketConfig()) {
+    } else if (protocol_type == "websocket" && ota_->HasWebsocketConfig()) {
         protocol_ = std::make_unique<WebsocketProtocol>();
     } else {
-        ESP_LOGW(TAG, "No protocol specified in the OTA config, using MQTT");
-        protocol_ = std::make_unique<MqttProtocol>();
+        ESP_LOGW(TAG, "Unknown protocol type or config missing, using LocalAgentProtocol");
+        protocol_ = std::make_unique<LocalAgentProtocol>();
     }
 
     protocol_->OnConnected([this]() { DismissAlert(); });

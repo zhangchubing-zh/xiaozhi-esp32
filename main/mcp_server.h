@@ -326,6 +326,20 @@ public:
     void ParseMessage(const cJSON* json);
     void ParseMessage(const std::string& message);
 
+    // --- Local agent helpers (used by LocalAgentProtocol to drive MCP in-process) ---
+
+    // Returns all non-user-only tools serialized as an OpenAI-style JSON array string
+    // (each element: {name, description, inputSchema}). Used by the on-device agent
+    // to populate the LLM `tools` parameter.
+    std::string GetToolsListJson() const;
+
+    // Synchronously invoke a tool by name with JSON arguments and return the
+    // JSON-RPC `result` object string (e.g. {"content":[{"type":"text","text":"true"}],"isError":false}).
+    // On unknown tool / invalid args / exception, returns an `error` JSON-RPC object.
+    // Execution is dispatched to the main task via Application::Schedule and awaited
+    // via a condition variable, so callers must NOT be on the main task.
+    std::string CallToolDirectly(const std::string& name, const cJSON* arguments);
+
 private:
     McpServer();
     ~McpServer();
