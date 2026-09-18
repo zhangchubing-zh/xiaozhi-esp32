@@ -34,12 +34,22 @@ set(SOURCES "audio/audio_codec.cc"
             "protocols/mqtt_protocol.cc"
             "protocols/websocket_protocol.cc"
             "protocols/local_agent_protocol.cc"
-            "agent/agent.cc"
-            "agent/conversation.cc"
-            "agent/providers/provider_common.cc"
-            "agent/providers/siliconflow_asr.cc"
-            "agent/providers/siliconflow_llm.cc"
-            "agent/providers/siliconflow_tts.cc"
+            "agent/litecrab/platform/lc_esp_bridge.c"
+            "agent/litecrab/src/util/json.c"
+            "agent/litecrab/src/config/config.c"
+            "agent/litecrab/src/runtime/runtime.c"
+            "agent/litecrab/src/runtime/builtin_tools.c"
+            "agent/litecrab/src/hub/hub.c"
+            "agent/litecrab/src/session/session.c"
+            "agent/litecrab/src/kernel/kernel.c"
+            "agent/litecrab/src/kernel/llm.c"
+            "agent/litecrab/src/kernel/skill.c"
+            "agent/litecrab/src/kernel/robot_skills.c"
+            "agent/litecrab/src/kernel/working_memory.c"
+            "agent/litecrab/src/observability/observability.c"
+            "agent/litecrab/src/gateway/ws_codec.c"
+            "agent/litecrab/src/gateway/asr_sf.c"
+            "agent/litecrab/src/gateway/tts_sf.c"
             "mcp_server.cc"
             "system_info.cc"
             "application.cc"
@@ -50,7 +60,7 @@ set(SOURCES "audio/audio_codec.cc"
             "main.cc"
             )
 
-set(INCLUDE_DIRS "." "display" "display/lvgl_display" "display/lvgl_display/jpg" "audio" "audio/demuxer" "protocols" "agent" "agent/providers")
+set(INCLUDE_DIRS "." "display" "display/lvgl_display" "display/lvgl_display/jpg" "audio" "audio/demuxer" "protocols" "agent" "agent/litecrab" "agent/litecrab/include" "agent/litecrab/platform" "agent/litecrab/src" "agent/litecrab/src/util" "agent/litecrab/src/kernel" "agent/litecrab/src/runtime" "agent/litecrab/src/hub" "agent/litecrab/src/session" "agent/litecrab/src/observability" "agent/litecrab/src/config" "agent/litecrab/src/gateway")
 
 # Add board common files
 list(APPEND SOURCES
@@ -1120,7 +1130,30 @@ if(NOT CMAKE_BUILD_EARLY_EXPANSION)
                         PRIVATE BOARD_MANUFACTURER=\"${BOARD_MANUFACTURER}\"
                         PRIVATE BUILTIN_TEXT_FONT=${BUILTIN_TEXT_FONT} BUILTIN_ICON_FONT=${BUILTIN_ICON_FONT}
                         PRIVATE TEXT_FONT_SIZE=${TEXT_FONT_SIZE} TEXT_FONT_BPP=${TEXT_FONT_BPP}
+                        PRIVATE LITECRAB_HAVE_OPUS=1
+                        PRIVATE _GNU_SOURCE
                         )
+    # Force-include the platform shim before every LiteCrab C source so that
+    # OpenSSL/socket/opus/getenv declarations are redirected to ESP-IDF equivalents.
+    set_source_files_properties(
+        agent/litecrab/src/util/json.c
+        agent/litecrab/src/config/config.c
+        agent/litecrab/src/runtime/runtime.c
+        agent/litecrab/src/runtime/builtin_tools.c
+        agent/litecrab/src/hub/hub.c
+        agent/litecrab/src/session/session.c
+        agent/litecrab/src/kernel/kernel.c
+        agent/litecrab/src/kernel/llm.c
+        agent/litecrab/src/kernel/skill.c
+        agent/litecrab/src/kernel/robot_skills.c
+        agent/litecrab/src/kernel/working_memory.c
+        agent/litecrab/src/observability/observability.c
+        agent/litecrab/src/gateway/ws_codec.c
+        agent/litecrab/src/gateway/asr_sf.c
+        agent/litecrab/src/gateway/tts_sf.c
+        agent/litecrab/platform/lc_esp_bridge.c
+        PROPERTIES COMPILE_FLAGS "-include \"${CMAKE_CURRENT_SOURCE_DIR}/agent/litecrab/platform/platform_shim.h\""
+    )
 endif()
 
 # Add generation rules

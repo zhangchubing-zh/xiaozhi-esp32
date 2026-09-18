@@ -9,7 +9,7 @@
 #include <memory>
 #include <thread>
 
-#include "agent/agent.h"
+#include "agent/litecrab/platform/lc_esp_bridge.h"
 
 // Implements the Protocol interface by running an on-device agent loop that
 // directly HTTPS-connects to cloud ASR/LLM/TTS providers. To Application, the
@@ -54,15 +54,29 @@ private:
     bool IsAborted();
 
     // Configuration loader
-    AgentConfig LoadConfig();
+    void LoadConfigAndInit();
 
     // Agent task sync primitives
     EventGroupHandle_t agent_events_ = nullptr;
-    std::unique_ptr<Agent> agent_;
     std::thread agent_thread_;
     std::atomic<bool> channel_opened_{false};
     std::atomic<bool> aborted_{false};
-    AgentConfig cfg_;
+
+    // LiteCrab config strings
+    std::string cfg_llm_endpoint_, cfg_llm_api_key_, cfg_llm_model_;
+    std::string cfg_asr_endpoint_, cfg_asr_api_key_, cfg_asr_model_, cfg_asr_stub_;
+    std::string cfg_tts_endpoint_, cfg_tts_api_key_, cfg_tts_model_, cfg_tts_voice_;
+    int cfg_llm_max_tokens_ = 2048;
+    double cfg_llm_temperature_ = 0.2;
+    int cfg_llm_stream_ = 0;
+    int cfg_llm_timeout_ms_ = 60000;
+    int cfg_asr_timeout_ms_ = 90000;
+    int cfg_asr_max_audio_seconds_ = 60;
+    int cfg_asr_fallback_ = 1;
+    int cfg_tts_enabled_ = 1;
+    int cfg_tts_sample_rate_ = 24000;
+    int cfg_tts_frame_ms_ = 60;
+    int cfg_tts_timeout_ms_ = 30000;
 };
 
 #endif  // LOCAL_AGENT_PROTOCOL_H

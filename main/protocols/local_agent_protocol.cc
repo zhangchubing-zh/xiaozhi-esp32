@@ -11,14 +11,30 @@
 #include "application.h"
 #include "assets/lang_config.h"
 #include "board.h"
+#include "mcp_server.h"
 #include "settings.h"
 #include "system_info.h"
 
 #define TAG "LocalAgent"
 
+/* Stubs for McpServer C++ accessors (called from lc_esp_bridge.c) */
+extern "C" {
+const char* mcp_get_tools_list_json(void) {
+    return McpServer::GetInstance().GetToolsListJson().c_str();
+}
+const char* mcp_call_tool_directly(const char* name, const char* arguments_json) {
+    static std::string result;
+    cJSON* args = cJSON_Parse(arguments_json);
+    if (!args) args = cJSON_CreateObject();
+    result = McpServer::GetInstance().CallToolDirectly(name, args);
+    cJSON_Delete(args);
+    return result.c_str();
+}
+}
+
 LocalAgentProtocol::LocalAgentProtocol() {
     agent_events_ = xEventGroupCreate();
-    server_sample_rate_ = 24000;  // TTS provider output sample rate
+    server_sample_rate_ = 24000;
     server_frame_duration_ = 60;
 }
 
@@ -31,69 +47,69 @@ LocalAgentProtocol::~LocalAgentProtocol() {
 }
 
 bool LocalAgentProtocol::Start() {
-    // Nothing to do until OpenAudioChannel is called.
     return true;
 }
 
 bool LocalAgentProtocol::SendText(const std::string& text) {
-    // We don't send text anywhere - the agent loop is driven by SendAudio +
-    // SendStartListening/SendStopListening/SendAbortSpeaking overrides below.
     ESP_LOGD(TAG, "SendText (ignored): %s", text.c_str());
     return true;
 }
 
 bool LocalAgentProtocol::IsAudioChannelOpened() const {
-    // Note: a per-turn abort (wake word interruption) must NOT invalidate the
-    // channel. Keeping it open lets the next wake reuse the agent task instead
-    // of re-opening (which previously freed a live Agent -> use-after-free).
     return channel_opened_.load();
 }
 
-AgentConfig LocalAgentProtocol::LoadConfig() {
-    AgentConfig cfg;
+void LocalAgentProtocol::LoadConfigAndInit() {
     Settings s("agent", false);
-    cfg.asr_provider = s.GetString("provider", "siliconflow");
-    cfg.llm_provider = s.GetString("provider", "siliconflow");
-    cfg.tts_provider = s.GetString("provider", "siliconflow");
-    cfg.api_key = s.GetString("api_key", "");
-    cfg.llm_model = s.GetString("llm_model", CONFIG_LOCAL_AGENT_DEFAULT_LLM_MODEL);
-    cfg.asr_model = s.GetString("asr_model", CONFIG_LOCAL_AGENT_DEFAULT_ASR_MODEL);
-    cfg.tts_model = s.GetString("tts_model", CONFIG_LOCAL_AGENT_DEFAULT_TTS_MODEL);
-    // The voice must be the full "<model>:<voice>" form (e.g.
-    // "FunAudioLLM/CosyVoice2-0.5B:alex"); a bare voice name gets HTTP 400.
-    // Hardcode the verified default rather than trusting a possibly-stale
-    // Kconfig-derived sdkconfig value.
-    cfg.tts_voice = s.GetString("tts_voice", "FunAudioLLM/CosyVoice2-0.5B:alex");
-    cfg.system_prompt = s.GetString("system_prompt", "");
-    cfg.asr_endpoint = s.GetString("asr_endpoint",
-                                    "https://api.siliconflow.cn/v1/audio/transcriptions");
-    cfg.llm_endpoint = s.GetString("llm_endpoint",
-                                    "https://api.siliconflow.cn/v1/chat/completions");
-    cfg.tts_endpoint = s.GetString("tts_endpoint",
-                                    "https://api.siliconflow.cn/v1/audio/speech");
-    // ASR free tier can queue 20-55s (measured with LiteCrab), so default the
-    // timeout to 90s regardless of the Kconfig default.
-    cfg.asr_timeout_ms = s.GetInt("asr_timeout_ms", 90000);
-    cfg.llm_timeout_ms = s.GetInt("llm_timeout_ms", CONFIG_LOCAL_AGENT_LLM_TIMEOUT_MS);
-    cfg.tts_timeout_ms = s.GetInt("tts_timeout_ms", CONFIG_LOCAL_AGENT_TTS_TIMEOUT_MS);
-    cfg.max_audio_seconds = s.GetInt("max_audio_seconds", CONFIG_LOCAL_AGENT_MAX_AUDIO_SECONDS);
-    cfg.max_tool_iterations = s.GetInt("max_tool_iterations", CONFIG_LOCAL_AGENT_MAX_TOOL_ITERATIONS);
-    cfg.conversation_history_limit = s.GetInt("conversation_history_limit",
-                                               CONFIG_LOCAL_AGENT_CONVERSATION_HISTORY_LIMIT);
-    // TODO: remove this hardcoded key once NVS-based provisioning is in place.
-    // Inlined for first-pass end-to-end testing only.
-    if (cfg.api_key.empty()) {
-        cfg.api_key = "sk-rgdwxvpekwdcrscrfzizqlajntczvdvpplfljpkhffmtlijw";
+    std::string provider = s.GetString("provider", "siliconflow");
+    std::string api_key = s.GetString("api_key", "");
+    cfg_llm_model_ = s.GetString("llm_model", CONFIG_LOCAL_AGENT_DEFAULT_LLM_MODEL);
+    cfg_asr_model_ = s.GetString("asr_model", CONFIG_LOCAL_AGENT_DEFAULT_ASR_MODEL);
+    cfg_tts_model_ = s.GetString("tts_model", CONFIG_LOCAL_AGENT_DEFAULT_TTS_MODEL);
+    cfg_tts_voice_ = s.GetString("tts_voice", "FunAudioLLM/CosyVoice2-0.5B:alex");
+    cfg_llm_endpoint_ = s.GetString("llm_endpoint", "https://api.siliconflow.cn/v1/chat/completions");
+    cfg_asr_endpoint_ = s.GetString("asr_endpoint", "https://api.siliconflow.cn/v1/audio/transcriptions");
+    cfg_tts_endpoint_ = s.GetString("tts_endpoint", "https://api.siliconflow.cn/v1/audio/speech");
+    cfg_asr_timeout_ms_ = s.GetInt("asr_timeout_ms", 90000);
+    cfg_llm_timeout_ms_ = s.GetInt("llm_timeout_ms", CONFIG_LOCAL_AGENT_LLM_TIMEOUT_MS);
+    cfg_tts_timeout_ms_ = s.GetInt("tts_timeout_ms", CONFIG_LOCAL_AGENT_TTS_TIMEOUT_MS);
+    cfg_asr_max_audio_seconds_ = s.GetInt("max_audio_seconds", CONFIG_LOCAL_AGENT_MAX_AUDIO_SECONDS);
+    if (api_key.empty()) {
+        api_key = "sk-rgdwxvpekwdcrscrfzizqlajntczvdvpplfljpkhffmtlijw";
     }
-    return cfg;
+    cfg_llm_api_key_ = api_key;
+    cfg_asr_api_key_ = api_key;
+    cfg_tts_api_key_ = api_key;
+    cfg_asr_stub_ = s.GetString("stub_text", "你好");
+
+    /* Set up callbacks */
+    lc_esp_set_callbacks(
+        [](const char* text) {  /* stt */
+            /* Will be emitted by LocalAgentProtocol instance via Schedule */
+        },
+        []() { /* tts_start */ },
+        [](const char* text) { /* tts_sentence */ },
+        []() { /* tts_stop */ },
+        [](const uint8_t* data, size_t len, uint32_t ts) { /* audio */ },
+        [](const char* emotion) { /* emotion */ },
+        []() -> bool { return false; }
+    );
+
+    /* Initialize LiteCrab */
+    lc_esp_init(
+        cfg_llm_endpoint_.c_str(), cfg_llm_api_key_.c_str(), cfg_llm_model_.c_str(),
+        cfg_llm_max_tokens_, cfg_llm_temperature_, cfg_llm_stream_, cfg_llm_timeout_ms_,
+        cfg_asr_endpoint_.c_str(), cfg_asr_api_key_.c_str(), cfg_asr_model_.c_str(),
+        cfg_asr_timeout_ms_, cfg_asr_max_audio_seconds_, cfg_asr_stub_.c_str(), cfg_asr_fallback_,
+        cfg_tts_enabled_, cfg_tts_endpoint_.c_str(), cfg_tts_api_key_.c_str(),
+        cfg_tts_model_.c_str(), cfg_tts_voice_.c_str(), cfg_tts_sample_rate_,
+        cfg_tts_frame_ms_, cfg_tts_timeout_ms_);
+
+    /* Sync device MCP tools */
+    lc_esp_sync_mcp_tools();
 }
 
 bool LocalAgentProtocol::OpenAudioChannel() {
-    // The app may call OpenAudioChannel again after an aborted turn (wake word
-    // interruption sets aborted_). In that case the agent task is still alive:
-    // reuse it instead of creating a second Agent/thread. Replacing agent_ while
-    // the old thread runs would free the old Agent (and its mutexes) out from
-    // under the running thread -> use-after-free crash.
     if (agent_thread_.joinable()) {
         ESP_LOGI(TAG, "Local-agent channel already open, reusing");
         aborted_.store(false);
@@ -103,51 +119,23 @@ bool LocalAgentProtocol::OpenAudioChannel() {
         return true;
     }
 
-    cfg_ = LoadConfig();
-    if (cfg_.api_key.empty()) {
-        ESP_LOGE(TAG, "agent/api_key not configured");
-        SetError(Lang::Strings::SERVER_ERROR);
-        return false;
-    }
-    ESP_LOGI(TAG, "Opening local-agent channel: provider=%s llm=%s asr=%s tts=%s",
-             cfg_.asr_provider.c_str(), cfg_.llm_model.c_str(),
-             cfg_.asr_model.c_str(), cfg_.tts_model.c_str());
-
+    LoadConfigAndInit();
     aborted_.store(false);
     channel_opened_.store(true);
 
-    // Derive a stable session id from the device MAC.
     session_id_ = "local-" + SystemInfo::GetMacAddress();
     std::replace(session_id_.begin(), session_id_.end(), ':', '-');
 
-    // Construct the agent with emit helpers that route through Application::Schedule.
-    auto emit_json = [this](const std::string& type, std::function<void(cJSON*)> body_builder) {
-        EmitJson(type, std::move(body_builder));
-    };
-    auto emit_audio = [this](std::vector<uint8_t> opus, uint32_t timestamp) {
-        EmitAudio(std::move(opus), timestamp);
-    };
-    auto is_aborted = [this]() { return IsAborted(); };
-    agent_ = std::make_unique<Agent>(cfg_, emit_json, emit_audio, is_aborted);
-
-    // Configure the agent thread BEFORE creating it. esp_pthread_set_cfg only
-    // affects threads created by the *calling* task, so it must run here (main
-    // task), not inside the thread body. The default pthread stack (3072 B) is
-    // far too small: the agent turn performs mbedTLS handshakes which need
-    // several KB of stack, and overflowing it corrupts adjacent heap blocks.
     esp_pthread_cfg_t thread_cfg = esp_pthread_get_default_config();
     thread_cfg.stack_size = 16 * 1024;
-    thread_cfg.prio = 4;  // below audio tasks
+    thread_cfg.prio = 4;
     thread_cfg.thread_name = "agent_task";
     thread_cfg.inherit_cfg = false;
     esp_pthread_set_cfg(&thread_cfg);
     agent_thread_ = std::thread([this]() { AgentTask(); });
-    // Restore the default pthread config so any other threads later created by
-    // this task (e.g. camera encoder threads) keep their expected defaults.
     esp_pthread_cfg_t default_cfg = esp_pthread_get_default_config();
     esp_pthread_set_cfg(&default_cfg);
 
-    // Notify Application that the channel is open (so it enters listening state).
     if (on_audio_channel_opened_) {
         on_audio_channel_opened_();
     }
@@ -158,30 +146,27 @@ void LocalAgentProtocol::CloseAudioChannel(bool send_goodbye) {
     (void)send_goodbye;
     if (!channel_opened_.exchange(false)) return;
     aborted_.store(true);
-    if (agent_) agent_->OnAbort();
+    lc_esp_abort();
     if (agent_events_) {
         xEventGroupSetBits(agent_events_, kEventAbort | kEventStopThread);
     }
     if (agent_thread_.joinable()) {
         agent_thread_.join();
     }
-    agent_.reset();
+    lc_esp_deinit();
     if (on_audio_channel_closed_) {
         on_audio_channel_closed_();
     }
 }
 
 bool LocalAgentProtocol::SendAudio(std::unique_ptr<AudioStreamPacket> packet) {
-    if (!channel_opened_.load() || !agent_) return false;
-    agent_->OnAudioFrame(packet->payload.data(), packet->payload.size());
+    if (!channel_opened_.load()) return false;
+    lc_esp_feed_audio(packet->payload.data(), packet->payload.size());
     return true;
 }
 
 void LocalAgentProtocol::SendWakeWordDetected(const std::string& wake_word) {
     (void)wake_word;
-    // A new turn begins: clear any stale abort flag from a previous turn and
-    // arm the ASR buffer via the agent task (never call into the agent
-    // directly from this task).
     aborted_.store(false);
     if (agent_events_) {
         xEventGroupSetBits(agent_events_, kEventListenStart);
@@ -205,7 +190,7 @@ void LocalAgentProtocol::SendStopListening() {
 void LocalAgentProtocol::SendAbortSpeaking(AbortReason reason) {
     (void)reason;
     aborted_.store(true);
-    if (agent_) agent_->OnAbort();
+    lc_esp_abort();
     if (agent_events_) {
         xEventGroupSetBits(agent_events_, kEventAbort);
     }
@@ -216,12 +201,11 @@ bool LocalAgentProtocol::IsAborted() {
 }
 
 void LocalAgentProtocol::EmitJson(const std::string& type,
-                                  std::function<void(cJSON*)> body_builder) {
+                                   std::function<void(cJSON*)> body_builder) {
     cJSON* root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "session_id", session_id_.c_str());
     cJSON_AddStringToObject(root, "type", type.c_str());
     if (body_builder) body_builder(root);
-    // Route to Application via Schedule so UI/state mutations are serialized on the main task.
     auto& app = Application::GetInstance();
     app.Schedule([this, root]() {
         if (on_incoming_json_ != nullptr) {
@@ -239,8 +223,6 @@ void LocalAgentProtocol::EmitAudio(std::vector<uint8_t> opus_payload, uint32_t t
     packet->timestamp = timestamp;
     packet->payload = std::move(opus_payload);
     auto& app = Application::GetInstance();
-    // std::function requires copyable targets; wrap the shared packet (copyable)
-    // instead of moving a unique_ptr into the lambda capture.
     app.Schedule([this, packet]() {
         if (on_incoming_audio_ != nullptr) {
             on_incoming_audio_(std::make_unique<AudioStreamPacket>(*packet));
@@ -255,31 +237,23 @@ void LocalAgentProtocol::AgentTask() {
             agent_events_,
             kEventListenStart | kEventListenStop | kEventAbort | kEventStopThread,
             pdTRUE, pdFALSE, portMAX_DELAY);
-        // NOTE: xEventGroupWaitBits(xClearOnExit=pdTRUE) clears ALL retrieved
-        // bits at once, so every set bit must be handled in this iteration --
-        // an early `continue` would silently drop the others (e.g. a wake word
-        // during listening raises ABORT and LISTEN_START together).
         if (bits & kEventStopThread) {
             ESP_LOGI(TAG, "Agent task: stop requested, exiting");
             break;
         }
         if (bits & kEventAbort) {
             ESP_LOGI(TAG, "Agent task: abort");
-            if (agent_) agent_->OnAbort();
+            lc_esp_abort();
         }
         if (bits & kEventListenStart) {
-            if (agent_) agent_->OnListenStart();
+            lc_esp_listen_start();
         } else if (bits & kEventListenStop) {
-            // Skip a turn that was aborted in this same batch (wake word
-            // interruption) -- its audio is stale.
-            if ((bits & kEventAbort) || !agent_) {
+            if ((bits & kEventAbort)) {
                 ESP_LOGI(TAG, "Agent task: skipping aborted turn");
                 continue;
             }
-            // Run the full turn synchronously. Abort requests arriving during
-            // the turn are observed via the is_aborted_ callback.
             try {
-                agent_->OnListenStop();
+                lc_esp_run_turn();
             } catch (const std::exception& e) {
                 ESP_LOGE(TAG, "Agent turn exception: %s", e.what());
                 EmitJson("tts", [](cJSON* root) { cJSON_AddStringToObject(root, "state", "start"); });

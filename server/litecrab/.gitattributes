@@ -1,5 +1,0 @@
-# Windows checkout 时保持 LF 换行，避免 WSL 构建脚本/Makefile 因 CRLF 损坏
-*.sh       text eol=lf
-Makefile   text eol=lf
-*.cmake    text eol=lf
-CMakeLists.txt text eol=lf
